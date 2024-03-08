@@ -1,0 +1,523 @@
+Program.Sub.ScreenSU.Start
+Program.Sub.ScreenSU.End
+
+Program.Sub.Preflight.Start
+
+Variable.Global.sTransID.Declare(String)
+Variable.UDT.UPallet.Define("Quantity",Long,Quantity)
+Variable.UDT.UPallet.Define("Part",String,Part)
+Variable.UDT.UPallet.Define("CUSTOMER_PO",String,CUSTOMER_PO)
+Variable.UDT.UPallet.Define("NAME_CUSTOMER_SHIP",String,NAME_CUSTOMER_SHIP)
+Variable.UDT.UPallet.Define("ADDRESS_1_SHIP",String,ADDRESS_1_SHIP)
+Variable.UDT.UPallet.Define("ADDRESS_2_SHIP",String,ADDRESS_2_SHIP)
+Variable.UDT.UPallet.Define("CITY_SHIP",String,CITY_SHIP)
+Variable.UDT.UPallet.Define("STATE_SHIP",String,STATE_SHIP)
+Variable.UDT.UPallet.Define("CODE_ZIP_SHIP",String,CODE_ZIP_SHIP)
+Variable.UDT.UPallet.Define("PLID",Long,PLID)
+Variable.UDT.UPallet.Define("DESCRIPTION",String,DESCRIPTION)
+Variable.UDT.UPallet.Define("CUSTOMER_PART",String,CUSTOMER_PART)
+Variable.UDT.UPallet.Define("PalletID",String,PalletID)
+Variable.uGlobal.UPallet.Declare("UPallet")
+Program.Sub.Preflight.End
+
+Program.Sub.Main.Start
+F.Intrinsic.Control.SetErrorHandler("Main_Err")
+F.Intrinsic.Control.ClearErrors
+
+V.Local.sError.Declare(String)
+
+'Coded by: CHANDANA, ANS
+'Project Start Date: 6/17/2011
+'Hook: 31971 (wirepoll.exe)
+'MOD RAN 04/21/16
+'MOD BRADY 10/06/22
+
+V.Local.sSql.Declare(String)
+V.Local.sTransID.Declare
+V.Local.sPallet.Declare(String)
+V.Local.sBox.Declare(String)
+V.Local.sCust.Declare(String)
+V.Local.sPalletNo.Declare(String)
+V.Local.sNextPallet.Declare(String)
+V.Local.iNextPallet.Declare(Long)
+V.Local.sPart.Declare(String)
+V.Local.iQty.Declare(Long)
+V.Local.iBQty.Declare(Long)
+V.Local.iUB.Declare(Long)
+V.Local.i.Declare(Long)
+V.Local.iP.Declare(Long)
+V.Local.sOrder.Declare(String)
+V.Local.sFirstTransID.Declare(String)
+
+V.Global.iBILogID.Declare(Long)
+V.Global.iBIRunID.Declare(Long)
+
+'Connect to the database
+F.ODBC.Connection!Con.OpenConnection(V.Ambient.PDSN,V.Ambient.PUser,V.Ambient.PPass)
+
+V.Global.sTransID.Set(V.Passed.Data-TransID)
+'V.Global.sTransID.Set(000002503)
+
+'V.Local.sPart.Redim(-1,-1)
+'V.Local.iQty.Redim(-1,-1)
+
+F.Intrinsic.String.Concat("Select Field_1, Field_2 from WIRELESS_LINE where TRANS_TYPE='CP2' and Trans_ID='",V.Global.sTransID,"'",V.Local.sSql)
+F.ODBC.Connection!Con.OpenRecordsetRO("rst",V.Local.sSql)
+F.Intrinsic.Control.If(V.ODBC.Con!rst.EOF,=,False)
+	V.Local.sCust.Set(V.ODBC.Con!rst.FieldVal!FIELD_1)
+	'Set the Customer number to 6 digit
+	F.Intrinsic.String.Left(V.Local.sCust,6,V.Local.sCust)
+	V.Local.sPallet.Set(V.ODBC.Con!rst.FieldValTrim!FIELD_2)
+F.Intrinsic.control.endif
+F.ODBC.Con!rst.close
+
+'get first trans_id for Pallet serial#
+F.Intrinsic.String.Concat("Select Top 1 Trans_ID from WIRELESS_LINE where TRANS_TYPE='CP2' and Field_2='",V.Local.sPallet,"'"," Order by Trans_ID",V.Local.sSql)
+F.ODBC.Connection!Con.OpenRecordsetRO("rstFirstTransID",V.Local.sSql)
+F.Intrinsic.Control.If(V.ODBC.Con!rstFirstTransID.EOF,=,False)
+	V.Local.sFirstTransID.Set(V.ODBC.Con!rstFirstTransId.FieldVal!TRANS_ID)
+F.Intrinsic.control.endif
+F.ODBC.Con!rstFirstTransID.close
+
+'added for CodeSoft because it was creating duplicate pallet labels for as many containers
+'if current trans id does not equal first trans id of set of master C02 records then end
+'this was added due to wirepoll/wir200 batch processing unprocessed transactions as separate threads concurrently
+
+'changed by Brady 10/06/22 uncommented not sure why this was ever commented out
+F.Intrinsic.Control.If(V.Global.sTransID,<>,V.Local.sFirstTransID)
+	F.Intrinsic.Control.End
+F.Intrinsic.Control.EndIf
+
+'changed by Brady 10/06/22 to sort records in order of scan
+F.Intrinsic.String.build("Select * from WIRELESS_LINE where FIELD_2='{0}' order by trans_id",V.Local.sPallet,V.Local.sSql)
+F.ODBC.Connection!Con.OpenRecordsetRO("rst",V.Local.sSql)
+
+F.Intrinsic.Control.DoUntil(V.ODBC.Con!rst.EOF,=,True)
+	V.Local.sTransID.Set(V.ODBC.Con!rst.FieldVal!Trans_ID)
+	V.Local.sBox.Set(V.ODBC.Con!rst.FieldValTrim!FIELD_3)
+	
+'	F.Intrinsic.String.Concat("select * from ATG_GFM_Boxes where BoxID='",V.local.sBox,"'",V.local.sSQL)
+'	F.ODBC.Connection!Con.OpenRecordsetRO("rstB",V.Local.sSql)
+'	F.Intrinsic.Control.If(V.ODBC.Con!rstB.EOF,=,False)
+'		V.Local.iP.Set(0)
+'		F.Intrinsic.Control.For(V.Local.i,0,V.Local.sPart.UBound,1)
+'			F.Intrinsic.Control.If(V.ODBC.Con!rstB.FieldVal!Part,=,V.Local.sPart(v.Local.i))
+'				V.Local.iP.Set(V.Local.i)
+'				F.Intrinsic.Control.ExitFor(V.Local.i)
+'			F.Intrinsic.Control.EndIf
+'		F.Intrinsic.Control.Next(V.Local.i)
+'		
+'		F.Intrinsic.Control.If(V.Local.iP,=,0)
+'			F.Intrinsic.Control.If(V.Local.sPart.UBound,=,-1)
+'				V.Local.sPart.Redim(0,0)
+'				V.Local.iQty.Redim(0,0)
+'				V.Local.sPart(0).Set(V.ODBC.Con!rstB.FieldVal!Part)
+'			F.Intrinsic.Control.Else
+'				F.Intrinsic.Math.Add(V.Local.sPart.UBound,1,V.Local.iUB)
+'				V.Local.sPart.RedimPreserve(0,V.Local.iUB)
+'				V.Local.iQty.RedimPreserve(0,V.Local.iUB)
+'				V.Local.sPart(v.Local.iUB).Set(V.ODBC.Con!rstB.FieldVal!Part)
+'				V.Local.iP.Set(V.Local.iUB)
+'			F.Intrinsic.Control.EndIf
+'		F.Intrinsic.Control.EndIf
+'		F.Intrinsic.Math.Add(V.ODBC.Con!rstB.FieldVal!Quantity1,V.ODBC.Con!rstB.FieldVal!Quantity2,V.Local.iBQty)
+'		F.Intrinsic.Math.Add(V.Local.iQty(v.Local.iP),V.Local.iBQty,V.Local.iQty(v.Local.iP))
+'
+'		F.Intrinsic.Control.If(V.Local.sOrder,=,"")
+'			V.Local.sOrder.Set(V.ODBC.Con!rstB.FieldVal!Order_No)
+'		F.Intrinsic.Control.EndIf
+'	F.Intrinsic.Control.EndIf
+'	F.ODBC.Con!rstB.Close
+
+	'--## Save Wireless lines to GFM pallets ##--
+	F.Intrinsic.String.Concat("select * from ATG_GFM_PALLETS where Customer='",V.Local.sCust,"'","and BoxID='",V.Local.sBox,"'","and PalletID='",V.Local.sPallet,"'",V.Local.sSql)
+	F.ODBC.Connection!Con.OpenRecordsetRW("rstGFMPallet",V.Local.sSql)
+	F.Intrinsic.Control.If(V.ODBC.Con!rstGFMPallet.EOF,=,True)
+		'Add new Pallet Record to ATG_GFM_Pallets
+		F.ODBC.Con!rstGFMPallet.AddNew
+		F.ODBC.Con!rstGFMPallet.Set!Customer(V.Local.sCust)
+		F.ODBC.Con!rstGFMPallet.Set!BoxID(V.Local.sBox)
+		F.ODBC.Con!rstGFMPallet.Set!PalletID(V.Local.sPallet)
+		F.ODBC.Con!rstGFMPallet.Set!CreateDT(V.Ambient.Now)
+		F.ODBC.Con!rstGFMPallet.Update
+	F.Intrinsic.Control.EndIf
+	F.ODBC.Con!rstGFMPallet.Close
+
+	'---### Update the wireless Header ###--
+	F.Intrinsic.String.Concat("Select * from WIRELESS_HDR where TRANS_TYPE='CP2' and TRANS_ID='",V.Local.sTransID,"'",V.Local.sSql)
+	F.ODBC.Connection!con.OpenRecordsetRW("rstPallet",V.Local.sSql)
+	F.Intrinsic.Control.If(V.ODBC.Con!rstPallet.EOF,=,False)
+		F.ODBC.Con!rstPallet.Set!SUCCESSFUL_FLAG("Y")
+		F.ODBC.Con!rstPallet.Set!ATTEMPTED_FLAG("Y")
+		F.ODBC.Con!rstPallet.Set!ATTEMPTED_DATE(V.ambient.now.Formatyyyymmdd)
+		F.ODBC.Con!rstPallet.Set!ATTEMPTED_TIME(V.Ambient.Now.Formathhmmss00)
+		F.ODBC.Con!rstPallet.Update
+	F.Intrinsic.Control.EndIf
+	F.ODBC.Con!rstPallet.Close
+
+	F.ODBC.Con!rst.MoveNext
+F.Intrinsic.Control.loop
+F.ODBC.Con!rst.Close
+
+F.Intrinsic.String.Concat("Select * from ATG_GFM_Pallets where PalletID='",V.Local.sPallet,"' and Customer='",V.Local.sCust,"'",V.Local.sSql)
+F.ODBC.Connection!Con.OpenRecordsetRO("rst",V.Local.sSql)
+F.Intrinsic.Control.DoUntil(V.ODBC.Con!rst.EOF,=,True)
+	V.Local.sBox.Set(V.ODBC.Con!rst.FieldVal!BoxID)
+	F.Intrinsic.String.Concat("select * from ATG_GFM_Boxes where BoxID='",V.local.sBox,"' and Customer='",V.Local.sCust,"'",V.local.sSQL)
+	F.ODBC.Connection!Con.OpenRecordsetRO("rstB",V.Local.sSql)
+	F.Intrinsic.Control.If(V.ODBC.Con!rstB.EOF,=,False)
+'		V.Local.iP.Set(-1)
+'		F.Intrinsic.Control.For(V.Local.i,0,V.Local.sPart.UBound,1)
+'			F.Intrinsic.Control.If(V.ODBC.Con!rstB.FieldVal!Part,=,V.Local.sPart(v.Local.i))
+'				V.Local.iP.Set(V.Local.i)
+'				F.Intrinsic.Control.ExitFor(V.Local.i)
+'			F.Intrinsic.Control.EndIf
+'		F.Intrinsic.Control.Next(V.Local.i)
+'		
+'		F.Intrinsic.Control.If(V.Local.iP,=,-1)
+'			F.Intrinsic.Control.If(V.Local.sPart.UBound,=,-1)
+				'V.Local.sPart.Redim(0,0)
+				'V.Local.iQty.Redim(0,0)
+				V.Local.sPart.Set(V.ODBC.Con!rstB.FieldVal!Part)
+				'V.Local.iP.Set(0)
+'			F.Intrinsic.Control.Else
+'				F.Intrinsic.Math.Add(V.Local.sPart.UBound,1,V.Local.iUB)
+'				V.Local.sPart.RedimPreserve(0,V.Local.iUB)
+'				V.Local.iQty.RedimPreserve(0,V.Local.iUB)
+'				V.Local.sPart(v.Local.iUB).Set(V.ODBC.Con!rstB.FieldVal!Part)
+'				V.Local.iP.Set(V.Local.iUB)
+'			F.Intrinsic.Control.EndIf
+'		F.Intrinsic.Control.EndIf
+		F.Intrinsic.Math.Add(V.ODBC.Con!rstB.FieldVal!Quantity1,V.ODBC.Con!rstB.FieldVal!Quantity2,V.Local.iBQty)
+		F.Intrinsic.Math.Add(V.Local.iQty,V.Local.iBQty,V.Local.iQty)
+
+		F.Intrinsic.Control.If(V.Local.sOrder,=,"")
+			V.Local.sOrder.Set(V.ODBC.Con!rstB.FieldVal!Order_No)
+		F.Intrinsic.Control.EndIf
+	F.Intrinsic.Control.EndIf
+	F.ODBC.Con!rstB.Close
+	F.ODBC.Con!rst.MoveNext
+F.Intrinsic.Control.loop
+F.ODBC.Con!rst.Close
+
+F.Intrinsic.String.Concat("Delete from ATG_GFM_PALLET_LABEL where PalletID='",V.Local.sPallet,"' and Customer='",V.Local.sCust,"'",V.Local.sSql)
+F.ODBC.Connection!con.execute(V.local.ssql)
+'Create pallet label records
+'F.Intrinsic.Control.For(V.Local.i,0,V.Local.sPart.UBound,1)
+
+	F.intrinsic.string.concat("Select * from ATG_GFM_PALLET_LABEL where PalletID='",V.Local.sPallet,"' and Customer='",V.Local.sCust,"' and Part='",V.Local.sPart,"'",V.Local.sSql)
+	F.ODBC.Connection!Con.OpenRecordsetRW("rstPL",V.Local.ssql)
+	F.Intrinsic.Control.If(V.ODBC.Con!rstPL.EOF,=,True)
+		F.ODBC.Con!rstPL.AddNew
+		F.ODBC.Con!rstPL.Set!PalletID(V.Local.sPallet)
+		F.ODBC.Con!rstPL.Set!Customer(V.Local.sCust)
+		F.ODBC.Con!rstPL.Set!Part(V.Local.sPart)
+	F.Intrinsic.Control.EndIf
+	F.ODBC.Con!rstPL.Set!OrderNo(V.Local.sOrder)
+	F.ODBC.Con!rstPL.Set!Quantity(V.Local.iQty)
+	F.ODBC.Con!rstPL.Update
+	F.ODBC.Con!rstPL.Close
+
+	'commented out to add batch label printing - 11/3/11
+	F.Intrinsic.String.Concat("Select Top 1 PLID from ATG_GFM_Pallet_Label where PalletID='",V.Local.sPallet,"' and Customer='",V.Local.sCust,"' and Part='",V.Local.sPart,"' order by PLID desc",V.Local.sSql)
+	F.ODBC.Connection!con.OpenRecordsetRO("rstLU",V.Local.sSQL)
+	F.Intrinsic.Control.If(V.ODBC.con!rstLU.EOF,=,False)
+		F.Intrinsic.Control.CallSub("PrintLabel","sCust",V.Local.sCust,"sPLID",V.ODBC.con!rstLU.FieldVal!PLID)
+	F.Intrinsic.Control.EndIf
+	F.ODBC.con!rstLU.Close
+'F.Intrinsic.Control.Next(V.Local.i)
+
+F.ODBC.Connection!Con.Close
+
+F.Intrinsic.Control.ExitSub
+
+F.Intrinsic.Control.Label("Main_Err")
+F.Intrinsic.Control.If(V.Ambient.ErrorNumber,<>,0)
+	Function.Intrinsic.String.Concat("Project: ATG_3781_GFM_Pallets.gas",V.Ambient.Newline,V.Ambient.Newline,"Subroutine: ",V.Ambient.CurrentSubroutine,V.Ambient.NewLine,"Error Occurred ",V.Ambient.ErrorNumber," with description ",V.Ambient.ErrorDescription,V.Local.sError)
+	F.Intrinsic.UI.Msgbox(V.Local.sError)
+Function.Intrinsic.Control.EndIf
+
+
+Program.Sub.Main.End
+
+Program.Sub.PrintLabel.Start
+F.Intrinsic.Control.SetErrorHandler("PrintLabel_Err")
+F.Intrinsic.Control.ClearErrors
+
+V.Local.sError.Declare(String)
+
+
+
+V.Local.sSQL.Declare(String)
+V.Local.sPalletRptID.Declare(String)
+V.Local.sNames.Declare(String)
+V.Local.sVals.Declare(String)
+V.Local.sRet.Declare
+V.Local.sPrinter.Declare(String)
+
+
+F.Intrinsic.String.Concat("Select PalletRptID from ATG_GFM_ID where Customer='",V.Args.sCust,"'",V.Local.sSQL)
+F.ODBC.Connection!con.OpenRecordsetRO("rstP",V.Local.sSQL)
+F.Intrinsic.Control.If(V.ODBC.con!rstP.EOF,=,False)
+	F.Intrinsic.Control.If(V.ODBC.con!rstP.FieldVal!PalletRptID,<>,"")
+		V.Local.sPalletRptID.Set(V.ODBC.con!rstP.FieldVal!PalletRptID)
+	F.Intrinsic.Control.Else
+		V.Local.sSQL.Set("Select PalletRptID from ATG_GFM_ID where Customer='-1'")
+		F.ODBC.Connection!con.OpenRecordsetRO("rstD",V.Local.sSQL)
+		F.Intrinsic.Control.If(V.ODBC.con!rstD.EOF,=,False)
+			F.Intrinsic.Control.If(V.ODBC.con!rstD.FieldVal!PalletRptID,<>,"")
+				V.Local.sPalletRptID.Set(V.ODBC.con!rstD.FieldVal!PalletRptID)
+			F.Intrinsic.Control.EndIf
+		F.Intrinsic.Control.EndIf
+		F.ODBC.con!rstD.Close
+	F.Intrinsic.Control.EndIf
+F.Intrinsic.Control.EndIf
+F.ODBC.con!rstP.Close
+
+F.Intrinsic.Control.If(V.Local.sPalletRptID,<>,"")
+	F.Global.Mobile.GetCustomPrinter(v.Global.sTransID,v.Local.sRet)
+	F.Intrinsic.String.Split(V.Local.sRet,"*!*",V.Local.sRet)
+	Function.Global.Mobile.GetPrinterNamefromID(v.Local.sRet(1),v.Local.sPrinter)
+	F.Intrinsic.Control.If(V.Local.sPrinter.Trim,<>,"")
+'		V.Local.sNames.Set("PLID")
+		V.Local.sVals.Set(V.Args.sPLID)
+		'F.Global.BI.PrintReport(V.Local.sPalletRptID,0,V.Local.sNames,V.Local.sVals,V.Local.sPrinter,False)
+'		F.Global.BI.PrintBartenderLabel(V.Local.sPalletRptID,0,V.Local.sNames,V.Local.sVals,False,V.Local.sPrinter,1)
+
+	V.uGlobal.UPallet.Redim(-1,-1)
+
+	F.Global.BI.GetRunID(V.Global.iBIRunID)
+	F.Global.BI.StartLogging(V.Global.iBIRunID,v.Local.sPalletRptID,-1,"",V.Global.iBILogID)
+
+
+	V.Local.sSQL.Set("SELECT ATG_GFM_PALLET_LABEL.PalletID, ATG_GFM_PALLET_LABEL.Quantity, ATG_GFM_PALLET_LABEL.Part, V_ORDER_HEADER.CUSTOMER_PO, ")
+	F.Intrinsic.String.Build("{0} V_ORDER_SHIP_TO.NAME_CUSTOMER_SHIP, V_ORDER_SHIP_TO.ADDRESS_1_SHIP, V_ORDER_SHIP_TO.ADDRESS_2_SHIP,",V.Local.sSql,V.Local.sSql)
+	F.Intrinsic.String.Build("{0} V_ORDER_SHIP_TO.CITY_SHIP, V_ORDER_SHIP_TO.STATE_SHIP, V_ORDER_SHIP_TO.CODE_ZIP_SHIP, ATG_GFM_PALLET_LABEL.PLID, V_INVENTORY_MSTR.DESCRIPTION, V_INV_CROSS_REF.CUSTOMER_PART",V.Local.sSql,V.Local.sSql)
+	F.Intrinsic.String.Build("{0} FROM ATG_GFM_PALLET_LABEL LEFT OUTER JOIN V_ORDER_HEADER ON ATG_GFM_PALLET_LABEL.OrderNo=V_ORDER_HEADER.ORDER_NO LEFT OUTER JOIN  V_INVENTORY_MSTR ON",V.Local.sSql,V.Local.sSql)
+	F.Intrinsic.String.Build("{0} ATG_GFM_PALLET_LABEL.Part=V_INVENTORY_MSTR.PART LEFT OUTER JOIN V_INV_CROSS_REF ON ATG_GFM_PALLET_LABEL.Customer=V_INV_CROSS_REF.CUSTOMER AND ATG_GFM_PALLET_LABEL.Part=V_INV_CROSS_REF.PART",V.Local.sSql,V.Local.sSql)
+	F.Intrinsic.String.Build("{0} INNER JOIN V_ORDER_SHIP_TO ON V_ORDER_HEADER.ORDER_NO=V_ORDER_SHIP_TO.ORDER_NO AND V_ORDER_HEADER.SHIP_ID=V_ORDER_SHIP_TO.SHIP_ID",V.Local.sSql,V.Local.sSql)
+	F.Intrinsic.String.Build("{0} WHERE ATG_GFM_PALLET_LABEL.PLID={1} ",V.Local.sSql,V.Args.sPLID,V.Local.sSql)
+
+	F.ODBC.Connection!con.OpenLocalRecordsetRO("rst",V.Local.sSql)
+	F.Intrinsic.Variable.LoadUDTFromRecordset("con","rst","V.uGlobal.UPallet",True,0)
+	F.ODBC.con!rst.Close
+
+	F.Intrinsic.Control.If(V.uGlobal.UPallet.UBound,>,-1)
+'			 Function.Intrinsic.Control.If(Variable.Global.bSentinel,=,True)
+		F.Global.BI.StopLogging(V.Global.iBILogID)
+			 'Printing Codesoft label
+     		F.Global.BI.PrintCodesoftLabelFromUDT(V.Global.iBIRunID,V.Global.iBILogID,"uGlobal.UPallet","",V.Local.sPrinter,True)
+'			F.Intrinsic.Control.EndIf
+	F.Intrinsic.Control.EndIf
+
+
+	F.Intrinsic.Control.Else
+		'write record to wl_audit_log
+
+	F.Intrinsic.Control.EndIf
+F.Intrinsic.Control.EndIf
+
+
+F.Intrinsic.Control.ExitSub
+
+F.Intrinsic.Control.Label("PrintLabel_Err")
+F.Intrinsic.Control.If(V.Ambient.ErrorNumber,<>,0)
+	Function.Intrinsic.String.Concat("Project: ATG_3781_GFM_Pallets.gas",V.Ambient.Newline,V.Ambient.Newline,"Subroutine: ",V.Ambient.CurrentSubroutine,V.Ambient.NewLine,"Error Occurred ",V.Ambient.ErrorNumber," with description ",V.Ambient.ErrorDescription,V.Local.sError)
+	F.Intrinsic.UI.Msgbox(V.Local.sError)
+Function.Intrinsic.Control.EndIf
+
+
+Program.Sub.PrintLabel.End
+
+Program.Sub.SaveData.Start
+F.Intrinsic.Control.SetErrorHandler("SaveData_Err")
+F.Intrinsic.Control.ClearErrors
+
+V.Local.sError.Declare(String)
+
+V.Local.sSql.Declare(String)
+V.Local.sTransID.Declare
+V.Local.sPallet.Declare(String)
+V.Local.sBox.Declare(String)
+V.Local.sCust.Declare(String)
+V.Local.sPalletNo.Declare(String)
+V.Local.sNextPallet.Declare(String)
+V.Local.iNextPallet.Declare(Long)
+V.Local.sPart.Declare(String)
+V.Local.iQty.Declare(Long)
+V.Local.iBQty.Declare(Long)
+V.Local.iUB.Declare(Long)
+V.Local.i.Declare(Long)
+V.Local.iP.Declare(Long)
+V.Local.sOrder.Declare(String)
+
+
+'Connect to the database
+'F.ODBC.Connection!Con.OpenConnection(V.Ambient.PDSN,V.Ambient.PUser,V.Ambient.PPass)
+
+V.Global.sTransID.Set(V.Passed.Data-TransID)
+'V.Global.sTransID.Set(000002503)
+
+'V.Local.sPart.Redim(-1,-1)
+'V.Local.iQty.Redim(-1,-1)
+
+F.Intrinsic.String.Concat("Select Field_1, Field_2 from WIRELESS_LINE where TRANS_TYPE='CP2' and Trans_ID='",V.Global.sTransID,"'",V.Local.sSql)
+F.ODBC.Connection!Con.OpenRecordsetRO("rst",V.Local.sSql)
+F.Intrinsic.Control.If(V.ODBC.Con!rst.EOF,=,False)
+	V.Local.sCust.Set(V.ODBC.Con!rst.FieldVal!FIELD_1)
+	'Set the Customer number to 6 digit
+	F.Intrinsic.String.Left(V.Local.sCust,6,V.Local.sCust)
+	V.Local.sPallet.Set(V.ODBC.Con!rst.FieldValTrim!FIELD_2)
+F.Intrinsic.control.endif
+F.ODBC.Con!rst.close
+
+F.Intrinsic.String.Concat("Select * from WIRELESS_LINE where FIELD_2='",V.Local.sPallet,"'",V.Local.sSql)
+F.ODBC.Connection!Con.OpenRecordsetRO("rst",V.Local.sSql)
+F.Intrinsic.Control.DoUntil(V.ODBC.Con!rst.EOF,=,True)
+	V.Local.sTransID.Set(V.ODBC.Con!rst.FieldVal!Trans_ID)
+	V.Local.sBox.Set(V.ODBC.Con!rst.FieldValTrim!FIELD_3)
+	
+'	F.Intrinsic.String.Concat("select * from ATG_GFM_Boxes where BoxID='",V.local.sBox,"'",V.local.sSQL)
+'	F.ODBC.Connection!Con.OpenRecordsetRO("rstB",V.Local.sSql)
+'	F.Intrinsic.Control.If(V.ODBC.Con!rstB.EOF,=,False)
+'		V.Local.iP.Set(0)
+'		F.Intrinsic.Control.For(V.Local.i,0,V.Local.sPart.UBound,1)
+'			F.Intrinsic.Control.If(V.ODBC.Con!rstB.FieldVal!Part,=,V.Local.sPart(v.Local.i))
+'				V.Local.iP.Set(V.Local.i)
+'				F.Intrinsic.Control.ExitFor(V.Local.i)
+'			F.Intrinsic.Control.EndIf
+'		F.Intrinsic.Control.Next(V.Local.i)
+'		
+'		F.Intrinsic.Control.If(V.Local.iP,=,0)
+'			F.Intrinsic.Control.If(V.Local.sPart.UBound,=,-1)
+'				V.Local.sPart.Redim(0,0)
+'				V.Local.iQty.Redim(0,0)
+'				V.Local.sPart(0).Set(V.ODBC.Con!rstB.FieldVal!Part)
+'			F.Intrinsic.Control.Else
+'				F.Intrinsic.Math.Add(V.Local.sPart.UBound,1,V.Local.iUB)
+'				V.Local.sPart.RedimPreserve(0,V.Local.iUB)
+'				V.Local.iQty.RedimPreserve(0,V.Local.iUB)
+'				V.Local.sPart(v.Local.iUB).Set(V.ODBC.Con!rstB.FieldVal!Part)
+'				V.Local.iP.Set(V.Local.iUB)
+'			F.Intrinsic.Control.EndIf
+'		F.Intrinsic.Control.EndIf
+'		F.Intrinsic.Math.Add(V.ODBC.Con!rstB.FieldVal!Quantity1,V.ODBC.Con!rstB.FieldVal!Quantity2,V.Local.iBQty)
+'		F.Intrinsic.Math.Add(V.Local.iQty(v.Local.iP),V.Local.iBQty,V.Local.iQty(v.Local.iP))
+'
+'		F.Intrinsic.Control.If(V.Local.sOrder,=,"")
+'			V.Local.sOrder.Set(V.ODBC.Con!rstB.FieldVal!Order_No)
+'		F.Intrinsic.Control.EndIf
+'	F.Intrinsic.Control.EndIf
+'	F.ODBC.Con!rstB.Close
+
+	'--## Save Wireless lines to GFM pallets ##--
+	F.Intrinsic.String.Concat("select * from ATG_GFM_PALLETS where Customer='",V.Local.sCust,"'","and BoxID='",V.Local.sBox,"'","and PalletID='",V.Local.sPallet,"'",V.Local.sSql)
+	F.ODBC.Connection!Con.OpenRecordsetRW("rstGFMPallet",V.Local.sSql)
+	F.Intrinsic.Control.If(V.ODBC.Con!rstGFMPallet.EOF,=,True)
+		'Add new Pallet Record to ATG_GFM_Pallets
+		F.ODBC.Con!rstGFMPallet.AddNew
+		F.ODBC.Con!rstGFMPallet.Set!Customer(V.Local.sCust)
+		F.ODBC.Con!rstGFMPallet.Set!BoxID(V.Local.sBox)
+		F.ODBC.Con!rstGFMPallet.Set!PalletID(V.Local.sPallet)
+		F.ODBC.Con!rstGFMPallet.Set!CreateDT(V.Ambient.Now)
+		F.ODBC.Con!rstGFMPallet.Update
+	F.Intrinsic.Control.EndIf
+	F.ODBC.Con!rstGFMPallet.Close
+
+	'---### Update the wireless Header ###--
+	F.Intrinsic.String.Concat("Select * from WIRELESS_HDR where TRANS_TYPE='CP2' and TRANS_ID='",V.Local.sTransID,"'",V.Local.sSql)
+	F.ODBC.Connection!con.OpenRecordsetRW("rstPallet",V.Local.sSql)
+	F.Intrinsic.Control.If(V.ODBC.Con!rstPallet.EOF,=,False)
+		F.ODBC.Con!rstPallet.Set!SUCCESSFUL_FLAG("Y")
+		F.ODBC.Con!rstPallet.Set!ATTEMPTED_FLAG("Y")
+		F.ODBC.Con!rstPallet.Set!ATTEMPTED_DATE(V.ambient.now.Formatyyyymmdd)
+		F.ODBC.Con!rstPallet.Set!ATTEMPTED_TIME(V.Ambient.Now.Formathhmmss00)
+		F.ODBC.Con!rstPallet.Update
+	F.Intrinsic.Control.EndIf
+	F.ODBC.Con!rstPallet.Close
+
+	F.ODBC.Con!rst.MoveNext
+F.Intrinsic.Control.loop
+F.ODBC.Con!rst.Close
+
+F.Intrinsic.String.Concat("Select * from ATG_GFM_Pallets where PalletID='",V.Local.sPallet,"' and Customer='",V.Local.sCust,"'",V.Local.sSql)
+F.ODBC.Connection!Con.OpenRecordsetRO("rst",V.Local.sSql)
+F.Intrinsic.Control.DoUntil(V.ODBC.Con!rst.EOF,=,True)
+	V.Local.sBox.Set(V.ODBC.Con!rst.FieldVal!BoxID)
+	F.Intrinsic.String.Concat("select * from ATG_GFM_Boxes where BoxID='",V.local.sBox,"' and Customer='",V.Local.sCust,"'",V.local.sSQL)
+	F.ODBC.Connection!Con.OpenRecordsetRO("rstB",V.Local.sSql)
+	F.Intrinsic.Control.If(V.ODBC.Con!rstB.EOF,=,False)
+'		V.Local.iP.Set(-1)
+'		F.Intrinsic.Control.For(V.Local.i,0,V.Local.sPart.UBound,1)
+'			F.Intrinsic.Control.If(V.ODBC.Con!rstB.FieldVal!Part,=,V.Local.sPart(v.Local.i))
+'				V.Local.iP.Set(V.Local.i)
+'				F.Intrinsic.Control.ExitFor(V.Local.i)
+'			F.Intrinsic.Control.EndIf
+'		F.Intrinsic.Control.Next(V.Local.i)
+'		
+'		F.Intrinsic.Control.If(V.Local.iP,=,-1)
+'			F.Intrinsic.Control.If(V.Local.sPart.UBound,=,-1)
+				'V.Local.sPart.Redim(0,0)
+				'V.Local.iQty.Redim(0,0)
+				V.Local.sPart.Set(V.ODBC.Con!rstB.FieldVal!Part)
+				'V.Local.iP.Set(0)
+'			F.Intrinsic.Control.Else
+'				F.Intrinsic.Math.Add(V.Local.sPart.UBound,1,V.Local.iUB)
+'				V.Local.sPart.RedimPreserve(0,V.Local.iUB)
+'				V.Local.iQty.RedimPreserve(0,V.Local.iUB)
+'				V.Local.sPart(v.Local.iUB).Set(V.ODBC.Con!rstB.FieldVal!Part)
+'				V.Local.iP.Set(V.Local.iUB)
+'			F.Intrinsic.Control.EndIf
+'		F.Intrinsic.Control.EndIf
+		F.Intrinsic.Math.Add(V.ODBC.Con!rstB.FieldVal!Quantity1,V.ODBC.Con!rstB.FieldVal!Quantity2,V.Local.iBQty)
+		F.Intrinsic.Math.Add(V.Local.iQty,V.Local.iBQty,V.Local.iQty)
+
+		F.Intrinsic.Control.If(V.Local.sOrder,=,"")
+			V.Local.sOrder.Set(V.ODBC.Con!rstB.FieldVal!Order_No)
+		F.Intrinsic.Control.EndIf
+	F.Intrinsic.Control.EndIf
+	F.ODBC.Con!rstB.Close
+	F.ODBC.Con!rst.MoveNext
+F.Intrinsic.Control.loop
+F.ODBC.Con!rst.Close
+
+F.Intrinsic.String.Concat("Delete from ATG_GFM_PALLET_LABEL where PalletID='",V.Local.sPallet,"' and Customer='",V.Local.sCust,"'",V.Local.sSql)
+F.ODBC.Connection!con.execute(V.local.ssql)
+'Create pallet label records
+'F.Intrinsic.Control.For(V.Local.i,0,V.Local.sPart.UBound,1)
+	F.intrinsic.string.concat("Select * from ATG_GFM_PALLET_LABEL where PalletID='",V.Local.sPallet,"' and Customer='",V.Local.sCust,"' and Part='",V.Local.sPart,"'",V.Local.sSql)
+	F.ODBC.Connection!Con.OpenRecordsetRW("rstPL",V.Local.ssql)
+	F.Intrinsic.Control.If(V.ODBC.Con!rstPL.EOF,=,True)
+		F.ODBC.Con!rstPL.AddNew
+		F.ODBC.Con!rstPL.Set!PalletID(V.Local.sPallet)
+		F.ODBC.Con!rstPL.Set!Customer(V.Local.sCust)
+		F.ODBC.Con!rstPL.Set!Part(V.Local.sPart)
+	F.Intrinsic.Control.EndIf
+	F.ODBC.Con!rstPL.Set!OrderNo(V.Local.sOrder)
+	F.ODBC.Con!rstPL.Set!Quantity(V.Local.iQty)
+	F.ODBC.Con!rstPL.Update
+	F.ODBC.Con!rstPL.Close
+
+	'commented out to add batch label printing - 11/3/11
+	F.Intrinsic.String.Concat("Select Top 1 PLID from ATG_GFM_Pallet_Label where PalletID='",V.Local.sPallet,"' and Customer='",V.Local.sCust,"' and Part='",V.Local.sPart,"' order by PLID desc",V.Local.sSql)
+	F.ODBC.Connection!con.OpenRecordsetRO("rstLU",V.Local.sSQL)
+	F.Intrinsic.Control.If(V.ODBC.con!rstLU.EOF,=,False)		
+		F.Intrinsic.Control.CallSub("PrintLabel","sCust",V.Local.sCust,"sPLID",V.ODBC.con!rstLU.FieldVal!PLID)
+	F.Intrinsic.Control.EndIf
+	F.ODBC.con!rstLU.Close
+'F.Intrinsic.Control.Next(V.Local.i)
+
+F.ODBC.Connection!Con.Close
+
+F.Intrinsic.Control.ExitSub
+
+F.Intrinsic.Control.Label("SaveData_Err")
+F.Intrinsic.Control.If(V.Ambient.ErrorNumber,<>,0)
+	Function.Intrinsic.String.Concat("Project: ATG_3781_GFM_Pallets.gas",V.Ambient.Newline,V.Ambient.Newline,"Subroutine: ",V.Ambient.CurrentSubroutine,V.Ambient.NewLine,"Error Occurred ",V.Ambient.ErrorNumber," with description ",V.Ambient.ErrorDescription,V.Local.sError)
+	F.Intrinsic.UI.Msgbox(V.Local.sError)
+Function.Intrinsic.Control.EndIf
+
+
+Program.Sub.SaveData.End
+
+
