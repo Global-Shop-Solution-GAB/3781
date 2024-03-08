@@ -1,0 +1,378 @@
+Program.Sub.ScreenSU.Start
+Program.Sub.ScreenSU.End
+
+Program.Sub.Preflight.Start
+
+Variable.Global.sTransID.Declare(String)
+Variable.UDT.UBatchBox.Define("DESCRIPTION",String,DESCRIPTION)
+Variable.UDT.UBatchBox.Define("CUSTOMER_PART",String,CUSTOMER_PART)
+Variable.UDT.UBatchBox.Define("NAME_CUSTOMER_SHIP",String,NAME_CUSTOMER_SHIP)
+Variable.UDT.UBatchBox.Define("ADDRESS1_SHIP",String,ADDRESS1_SHIP)
+Variable.UDT.UBatchBox.Define("ADDRESS2_SHIP",String,ADDRESS2_SHIP)
+Variable.UDT.UBatchBox.Define("CITY_SHIP",String,CITY_SHIP)
+Variable.UDT.UBatchBox.Define("STATE_SHIP",String,STATE_SHIP)
+Variable.UDT.UBatchBox.Define("CODE_ZIP_SHIP",String,CODE_ZIP_SHIP)
+Variable.UDT.UBatchBox.Define("Part",String,Part)
+Variable.UDT.UBatchBox.Define("Lot1",String,Lot1)
+Variable.UDT.UBatchBox.Define("Quantity",Long,Quantity)
+Variable.UDT.UBatchBox.Define("Lot2",String,Lot2)
+Variable.UDT.UBatchBox.Define("CreateDT",Date,CreateDT)
+Variable.UDT.UBatchBox.Define("CUSTOMER_PO",String,CUSTOMER_PO)
+Variable.UDT.UBatchBox.Define("BoxID",String,BoxID)
+Variable.UDT.UBatchBox.Define("BID",Long,BID)
+Variable.UDT.UBatchBox.Define("BatchNo",Long,BatchNo)
+Variable.UDT.UBatchBox.Define("USERID",String,USERID)
+Variable.UDT.UBatchBox.Define("Comment",String,Comment)
+Variable.UDT.UBatchBox.Define("order_no",String,order_no)
+Variable.UDT.UBatchBox.Define("USER_DEFINED_PART",String,USER_DEFINED_PART)
+Variable.UDT.UBatchBox.Define("LABEL_COPY",Long)
+Variable.uGlobal.UBatchBox.Declare("UBatchBox")
+
+Program.Sub.Preflight.End
+
+Program.Sub.Main.Start
+F.Intrinsic.Control.SetErrorHandler("Main_Err")
+F.Intrinsic.Control.ClearErrors
+
+V.Local.sError.Declare(String)
+
+'Coded by: CHANDANA, ANS
+'Project Start Date: 6/14/2011
+'Hook: 31970 (wirepoll.exe)
+'MOD RAN 04/21/16
+
+V.Local.sSql.Declare(String)
+V.Local.sDate.Declare(String)
+V.Local.sTime.Declare(String)
+V.Local.sBoxID.Declare(String)
+V.Local.iNextBoxID.Declare(Long)
+V.Local.sNextBoxID.Declare(String)
+V.Local.sCust.Declare(String)
+V.Local.iLblQty.Declare(Long)
+V.Local.sPart.Declare(String)
+V.Local.sLot1.Declare(String)
+V.Local.sLot2.Declare(String)
+V.Local.sBin1.Declare(String)
+V.Local.sHeat1.Declare(String)
+V.Local.sBin2.Declare(String)
+V.Local.sHeat2.Declare(String)
+V.Local.iQty1.Declare(Long)
+V.Local.iQty2.Declare(Long)
+V.Local.sPrefix.Declare(String)
+V.Local.iCt.Declare(Long)
+V.Local.sWUser.Declare(String)
+V.Local.sOrder.Declare(String)
+V.Local.iBatch.Declare(Long)
+V.Global.iBILogID.Declare(Long)
+V.Global.iBIRunID.Declare(Long)
+
+'Connect to the database
+F.ODBC.Connection!con.OpenConnection(V.Ambient.PDSN,V.Ambient.PUser,V.Ambient.PPass)
+
+V.Global.sTransID.Set(V.Passed.Data-TransID)
+'V.Global.sTransID.Set("000000493")
+
+F.Intrinsic.String.Format(V.Ambient.Now,"yyyymmdd",V.Local.sDate)
+F.Intrinsic.String.Format(V.Ambient.Now,"hhmmss00",V.Local.sTime)
+
+'---### Update the Flags Date & Time fields in the Wireless Header ###---
+F.Intrinsic.String.Concat("select * from WIRELESS_HDR where TRANS_TYPE='CP1' and TRANS_ID='",V.Global.sTransID,"'",V.Local.sSql)
+F.ODBC.Connection!con.OpenRecordsetRW("rstHDR",V.Local.sSql)
+F.Intrinsic.Control.If(V.ODBC.con!rstHDR.EOF,=,False)
+	V.Local.sWUser.Set(V.ODBC.con!rstHDR.FieldVal!User_ID)
+F.Intrinsic.Control.EndIf
+
+'---### Copy Wireless Lines to ATG_GFM_Boxes and Update the ATG_GFM_ID table ###---
+'--# Get the wireless lines info based on the Transaction ID #--
+F.Intrinsic.String.Concat("select * from WIRELESS_LINE where TRANS_TYPE='CP1' and TRANS_ID='",V.Global.sTransID,"'",V.Local.sSql)
+
+'Open RO Record set to extract records form Wireless_Lines
+F.ODBC.Connection!con.OpenRecordsetRO("rstLines",V.Local.sSql)
+
+F.Intrinsic.Control.If(V.ODBC.con!rstLines.EOF,=,False)
+	'Set the Customer number to a local variable
+		V.Local.sCust.Set(V.ODBC.con!rstLines.FieldVal!FIELD_1)
+	'Adjust the length on the customer number to 6
+		F.Intrinsic.String.Left(V.Local.sCust,6,V.Local.sCust)
+		F.Intrinsic.String.RPad(V.Local.sCust," ",6,V.Local.sCust)
+
+	'Set the Part to a local variable with length 20
+		V.Local.sPart.Set(V.ODBC.con!rstLines.FieldVal!FIELD_2)
+		F.Intrinsic.String.Left(V.Local.sPart,20,V.Local.sPart)
+		F.Intrinsic.String.LPad(V.Local.sPart," ",20,V.Local.sPart)
+
+	'Set the Bin1 to a local variable with length 6
+		V.Local.sBin1.Set(V.ODBC.con!rstLines.FieldVal!FIELD_3)
+		F.Intrinsic.String.Left(V.Local.sBin1,6,V.Local.sBin1)
+
+	'Set the Heat1 to a local variable with length 15
+		V.Local.sHeat1.Set(V.ODBC.con!rstLines.FieldVal!FIELD_4)
+		F.Intrinsic.String.Left(V.Local.sHeat1,15,V.Local.sHeat1)
+
+	'Set the Lot1 to a local variable with length 15
+		V.Local.sLot1.Set(V.ODBC.con!rstLines.FieldVal!FIELD_5)
+		F.Intrinsic.String.Left(V.Local.sLot1,15,V.Local.sLot1)
+
+	'Set the Quantity1 to a local variable
+		V.Local.iQty1.Set(V.ODBC.con!rstLines.FieldVal!FIELD_6)
+
+	'Set the Bin2 to a local variable with length 6
+		V.Local.sBin2.Set(V.ODBC.con!rstLines.FieldVal!FIELD_7)
+		F.Intrinsic.String.Left(V.Local.sBin2,6,V.Local.sBin2)
+
+	'Set the Heat2 to a local variable with length 15
+		V.Local.sHeat2.Set(V.ODBC.con!rstLines.FieldVal!FIELD_8)
+		F.Intrinsic.String.Left(V.Local.sHeat2,15,V.Local.sHeat2)
+
+	'Set the Lot2 to a local variable with length 15
+		V.Local.sLot2.Set(V.ODBC.con!rstLines.FieldVal!FIELD_9)
+		F.Intrinsic.String.Left(V.Local.sLot2,15,V.Local.sLot2)
+
+	'Set the Quantity1 to a local variable
+		V.Local.iQty2.Set(V.ODBC.con!rstLines.FieldVal!FIELD_10)
+	F.Intrinsic.Control.If(V.Local.iQty2,=,"")
+		V.Local.iQty2.Set(0)
+	F.Intrinsic.Control.EndIf
+
+	'Set the Order to a local variable with length 7
+		V.Local.sOrder.Set(V.ODBC.con!rstLines.FieldVal!FIELD_11)
+		F.Intrinsic.String.Left(V.Local.sOrder,7,V.Local.sOrder)
+
+	'Save the Label Quantity to a local variable
+		V.Local.iLblQty.Set(V.ODBC.con!rstLines.FieldVal!FIELD_12)
+
+	V.Local.sPrefix.Set("000")
+
+		'--# Get the Box ID from ATG_GFM_ID for the given customer and Increment the box ID #--
+		F.Intrinsic.String.Concat("Select * from ATG_GFM_ID where CUSTOMER='",V.Local.sCust,"'",V.Local.sSql)
+		'Open RW recordset 'rstBox'
+		F.ODBC.Connection!con.OpenRecordsetRW("rstBox",V.Local.sSql)
+
+		F.Intrinsic.Control.If(V.ODBC.con!rstBox.EOF,=,False)
+			V.Local.sBoxID.Set(V.ODBC.con!rstBox.FieldVal!BoxID)
+			V.Local.sPrefix.Set(V.ODBC.con!rstBox.FieldVal!Prefix)
+		F.Intrinsic.Control.Else
+			F.Intrinsic.String.Concat("S000","00000001",V.Local.sBoxID)
+			'Addnew record to the ATG_GFM_ID
+			F.ODBC.con!rstBox.AddNew
+			F.Intrinsic.String.RPad(V.Local.sCust," ",6,V.Local.sCust)
+			F.ODBC.con!rstBox.Set!Customer(V.Local.sCust)
+			F.ODBC.con!rstBox.Set!Prefix(V.Local.sPrefix)
+			F.ODBC.con!rstBox.Set!PalletID("S00090000001")
+			F.ODBC.con!rstBox.Set!ShipID(1)
+			F.ODBC.con!rstBox.Set!BoxRptID("")
+			F.ODBC.con!rstBox.Set!PalletRptID("")
+			F.ODBC.con!rstBox.Set!DupLabels(0)
+		F.Intrinsic.Control.EndIf
+		
+		'We need to update the record now in the ATG_GFM_ID
+		'Now lets add this to the right 8, and then updated the table.
+		
+		F.Intrinsic.String.Right(V.Local.sBoxID,8,V.Local.iNextBoxID)
+		F.Intrinsic.Math.Add(V.Local.iNextBoxID,V.Local.iLblQty,V.Local.iNextBoxID)
+		F.Intrinsic.Control.If(V.Local.iNextBoxID,>,89999999)
+			V.Local.iNextBoxID.Set(1)
+		F.Intrinsic.Control.EndIf
+		F.Intrinsic.String.LPad(V.Local.iNextBoxID,0,8,V.Local.sNextBoxID)
+		F.Intrinsic.String.Concat("S",V.Local.sPrefix,V.Local.sNextBoxID,V.Local.sNextBoxID)
+		'Update the BoxID to the table ATG_GFM_ID
+		F.ODBC.con!rstBox.Set!BoxID(V.Local.sNextBoxID)
+
+		'Update the recordset
+		F.ODBC.con!rstBox.Update
+		F.ODBC.con!rstBox.Close
+
+		F.ODBC.Connection!con.OpenRecordsetRO("rstBN","Select top 1 BatchNo from ATG_GFM_Boxes order by BatchNo desc")
+		F.Intrinsic.Control.If(V.ODBC.con!rstBN.EOF,=,False)
+			F.Intrinsic.Math.Add(V.ODBC.con!rstBN.FieldVal!BatchNo,1,V.Local.iBatch)
+		F.Intrinsic.Control.Else
+			V.Local.iBatch.Set(1)
+		F.Intrinsic.Control.endif
+		F.ODBC.con!rstBN.close
+
+		F.Intrinsic.Control.For(V.Local.iCt,1,V.Local.iLblQty,1)
+
+			F.Intrinsic.Control.If(V.Local.iCt,<>,1)
+				'Add one to the available BoxID
+				F.Intrinsic.String.Right(V.Local.sBoxID,8,V.Local.iNextBoxID)
+				F.Intrinsic.Math.Add(V.Local.iNextBoxID,1,V.Local.iNextBoxID)
+				F.Intrinsic.Control.If(V.Local.iNextBoxID,>,89999999)
+					V.Local.iNextBoxID.Set(1)
+				F.Intrinsic.Control.EndIf
+				F.Intrinsic.String.LPad(V.Local.iNextBoxID,0,8,V.Local.sNextBoxID)
+				F.Intrinsic.String.Concat("S",V.Local.sPrefix,V.Local.sNextBoxID,V.Local.sNextBoxID)
+				V.Local.sBoxID.Set(V.Local.sNextBoxID)
+			F.Intrinsic.Control.EndIf
+
+			'--# Save the Info to the ATG_GFM_BOXES #--
+			F.Intrinsic.String.Concat("select * from ATG_GFM_BOXES where BoxID='",V.Local.sBoxID,"' and Customer='",V.Local.sCust,"'",V.Local.sSql)
+			'Open RW Recordset 'rstSave' to save the records from  Wireless Lines to ATG_GFM_BOXES
+			F.ODBC.Connection!con.OpenRecordsetRW("rstSave",V.Local.sSql)
+
+			F.Intrinsic.Control.If(V.ODBC.con!rstSave.EOF,=,True)
+				F.ODBC.con!rstSave.AddNew
+				F.ODBC.con!rstSave.Set!BoxID(V.Local.sBoxID)
+				F.ODBC.con!rstSave.Set!Customer(V.Local.sCust)
+			F.Intrinsic.Control.EndIf
+			F.ODBC.con!rstSave.Set!Part(V.Local.sPart)
+			F.ODBC.con!rstSave.Set!Bin1(V.Local.sBin1)
+			F.ODBC.con!rstSave.Set!Heat1(V.Local.sHeat1)
+			F.ODBC.con!rstSave.Set!Lot1(V.Local.sLot1)
+			F.ODBC.con!rstSave.Set!Quantity1(V.Local.iQty1)
+			F.ODBC.con!rstSave.Set!Bin2(V.Local.sBin2)
+			F.ODBC.con!rstSave.Set!Heat2(V.Local.sHeat2)
+			F.ODBC.con!rstSave.Set!Lot2(V.Local.sLot2)
+			F.ODBC.con!rstSave.Set!Quantity2(V.Local.iQty2)
+			F.ODBC.con!rstSave.Set!Order_No(V.Local.sOrder)
+			F.ODBC.con!rstSave.Set!UserID(V.Local.sWUser)
+			F.ODBC.con!rstSave.Set!CreateDT(V.Ambient.Now)
+			F.ODBC.con!rstSave.Set!BatchNo(V.Local.iBatch)
+			'Update the recordset
+			F.ODBC.con!rstSave.Update
+			F.ODBC.con!rstSave.Close
+			F.Intrinsic.UI.Sleep(1)
+
+			'commented out to add batch label printing - 11/3/11
+'			F.Intrinsic.String.Concat("Select Top 1 BID from ATG_GFM_Boxes where BoxID='",V.Local.sBoxID,"' and Customer='",V.Local.sCust,"' order by BID desc",V.Local.sSql)
+'			F.ODBC.Connection!con.OpenRecordsetRO("rstLU",V.Local.ssql)
+'			F.Intrinsic.Control.If(V.ODBC.con!rstLU.EOF,=,False)
+'				F.Intrinsic.Control.CallSub("PrintLabel","sCust",V.Local.sCust,"sBID",V.ODBC.con!rstLU.FieldVal!BID,"sWUser",V.Local.sWUser)
+'			F.Intrinsic.Control.EndIf
+'			F.ODBC.con!rstLU.Close
+		F.Intrinsic.Control.Next(V.Local.iCt)
+
+		F.Intrinsic.Control.CallSub("PrintLabel","sCust",V.Local.sCust,"iBatchNo",V.Local.iBatch)
+F.Intrinsic.Control.EndIf
+F.ODBC.con!rstLines.Close
+
+F.Intrinsic.Control.If(V.ODBC.con!rstHDR.EOF,=,False)
+	F.ODBC.con!rstHDR.Set!SUCCESSFUL_FLAG("Y")
+	F.ODBC.con!rstHDR.Set!ATTEMPTED_FLAG("Y")
+	F.ODBC.con!rstHDR.Set!ATTEMPTED_DATE(V.Local.sDate)
+	F.ODBC.con!rstHDR.Set!ATTEMPTED_TIME(V.Local.sTime)
+	F.ODBC.con!rstHDR.Update
+F.Intrinsic.Control.EndIf
+F.ODBC.con!rstHDR.Close
+
+F.ODBC.Connection!con.Close
+
+F.Intrinsic.Control.ExitSub
+
+F.Intrinsic.Control.Label("Main_Err")
+F.Intrinsic.Control.If(V.Ambient.ErrorNumber,<>,0)
+	Function.Intrinsic.String.Concat("Project: ATG_3781_GFM_Boxes.gas",V.Ambient.Newline,V.Ambient.Newline,"Subroutine: ",V.Ambient.CurrentSubroutine,V.Ambient.NewLine,"Error Occurred ",V.Ambient.ErrorNumber," with description ",V.Ambient.ErrorDescription,V.Local.sError)
+	F.Intrinsic.UI.Msgbox(V.Local.sError)
+Function.Intrinsic.Control.EndIf
+
+
+Program.Sub.Main.End
+
+Program.Sub.PrintLabel.Start
+F.Intrinsic.Control.SetErrorHandler("PrintLabel_Err")
+F.Intrinsic.Control.ClearErrors
+
+V.Local.sError.Declare(String)
+
+
+
+V.Local.sSQL.Declare(String)
+V.Local.sBoxRptID.Declare(String)
+V.Local.sNames.Declare(String)
+V.Local.sVals.Declare(String)
+V.Local.sPrinter.Declare(String)
+V.Local.sRet.Declare
+V.Local.iLblQty.Declare(Long)
+V.Local.iCounter.Declare(Long,0)
+
+F.Intrinsic.String.Concat("Select BatchBoxRptID , DupLabels from ATG_GFM_ID where Customer='",V.Args.sCust,"'",V.Local.sSQL)
+F.ODBC.Connection!con.OpenRecordsetRO("rst",V.Local.sSQL)
+F.Intrinsic.Control.If(V.ODBC.con!rst.EOF,=,False)
+	F.Intrinsic.Control.If(V.ODBC.con!rst.FieldVal!DupLabels,=,True)
+		V.Local.iLblQty.Set(2)
+	F.Intrinsic.Control.Else
+		V.Local.iLblQty.Set(1)
+	F.Intrinsic.Control.EndIf
+	F.Intrinsic.Control.If(V.ODBC.con!rst.FieldVal!BatchBoxRptID,<>,"")
+		V.Local.sBoxRptID.Set(V.ODBC.con!rst.FieldVal!BatchBoxRptID)
+	F.Intrinsic.Control.Else
+		V.Local.sSQL.Set("Select BatchBoxRptID from ATG_GFM_ID where Customer='-1'")
+		F.ODBC.Connection!con.OpenRecordsetRO("rstD",V.Local.sSQL)
+		F.Intrinsic.Control.If(V.ODBC.con!rstD.EOF,=,False)
+			F.Intrinsic.Control.If(V.ODBC.con!rstD.FieldVal!BatchBoxRptID,<>,"")
+				V.Local.sBoxRptID.Set(V.ODBC.con!rstD.FieldVal!BatchBoxRptID)
+			F.Intrinsic.Control.EndIf
+		F.Intrinsic.Control.EndIf
+		F.ODBC.con!rstD.Close
+	F.Intrinsic.Control.EndIf
+F.Intrinsic.Control.EndIf
+F.ODBC.con!rst.Close
+
+F.Intrinsic.Control.If(V.Local.sBoxRptID,<>,"")
+	F.Global.Mobile.GetCustomPrinter(v.Global.sTransID,v.Local.sRet)
+	F.Intrinsic.String.Split(V.Local.sRet,"*!*",V.Local.sRet)
+	Function.Global.Mobile.GetPrinterNamefromID(v.Local.sRet(1),v.Local.sPrinter)
+	F.Intrinsic.Control.If(V.Local.sPrinter.trim,<>,"")
+		V.Local.sNames.Set("BatchNo")
+		V.Local.sVals.Set(V.Args.iBatchNo.String)
+
+		'F.Global.BI.PrintReport(V.Local.sBoxRptID,0,V.Local.sNames,V.Local.sVals,V.Local.sPrinter,False)
+		'F.Global.BI.PrintBartenderLabel(V.Local.sBoxRptID,0,V.Local.sNames,V.Local.sVals,False,V.Local.sPrinter,V.Local.iLblQty)
+		V.uGlobal.UBatchBox.Redim(-1,-1)
+
+		F.Global.BI.GetRunID(V.Global.iBIRunID)
+		F.Global.BI.StartLogging(V.Global.iBIRunID,V.Local.sBoxRptID,-1,"",V.Global.iBILogID)
+
+'		F.Intrinsic.String.Build("Select * From Y_SF_WORKORD where RUNID = {0}",V.Global.iBIRunID,V.Local.sSql)
+
+	V.Local.sSql.Set("SELECT V_INVENTORY_MSTR.DESCRIPTION, V_INV_CROSS_REF.CUSTOMER_PART, V_CUSTOMER_SHIPTO.NAME_CUSTOMER_SHIP, V_CUSTOMER_SHIPTO.ADDRESS1_SHIP,")
+	F.Intrinsic.String.Build("{0} V_CUSTOMER_SHIPTO.ADDRESS2_SHIP, V_CUSTOMER_SHIPTO.CITY_SHIP, V_CUSTOMER_SHIPTO.STATE_SHIP, V_CUSTOMER_SHIPTO.CODE_ZIP_SHIP, ATG_GFM_BOXES.BID,",V.Local.sSql,V.Local.sSql)
+	F.Intrinsic.String.Build("{0} ATG_GFM_BOXES.BatchNo, ATG_GFM_BOXES.Part, ATG_GFM_BOXES.Lot1, ATG_GFM_BOXES.Quantity1+ATG_GFM_BOXES.Quantity2 as Quantity, ATG_GFM_BOXES.Lot2,",V.Local.sSql,V.Local.sSql)
+	F.Intrinsic.String.Build("{0} ATG_GFM_BOXES.CreateDT, ATG_GFM_BOXES.BoxID, V_ORDER_HEADER.CUSTOMER_PO, ATG_GFM_BOXES.USERID,V_INV_CROSS_REF.COMMENT,ATG_GFM_BOXES.order_no,V_INV_CROSS_REF.USER_DEFINED_PART ",V.Local.sSql,V.Local.sSql)
+	F.Intrinsic.String.Build("{0} from ATG_GFM_BOXES LEFT OUTER JOIN V_INVENTORY_MSTR ON ATG_GFM_BOXES.Part=V_INVENTORY_MSTR.PART",V.Local.sSql,V.Local.sSql)
+	F.Intrinsic.String.Build("{0} LEFT OUTER JOIN V_CUSTOMER_SHIPTO ON ATG_GFM_BOXES.Customer=V_CUSTOMER_SHIPTO.CUSTOMER",V.Local.sSql,V.Local.sSql)
+	F.Intrinsic.String.Build("{0} LEFT OUTER JOIN V_INV_CROSS_REF ON ATG_GFM_BOXES.Customer = V_INV_CROSS_REF.CUSTOMER AND ATG_GFM_BOXES.Part=V_INV_CROSS_REF.PART ",V.Local.sSql,V.Local.sSql)
+	F.Intrinsic.String.Build("{0} LEFT OUTER JOIN V_ORDER_HEADER ON ATG_GFM_BOXES.Order_No = V_ORDER_HEADER.ORDER_NO",V.Local.sSql,V.Local.sSql)
+	F.Intrinsic.String.Build("{0} WHERE ATG_GFM_BOXES.BatchNo= {1} ",V.Local.sSql,V.Args.iBatchNo,V.Local.sSql)
+
+		F.ODBC.Connection!con.OpenLocalRecordsetRO("rst",V.Local.sSql)
+		F.Intrinsic.Variable.LoadUDTFromRecordset("con","rst","V.uGlobal.UBatchBox",True,0)
+		F.ODBC.con!rst.Close
+
+'		Variable.Global.bSentinel.Set(Variable.Passed.DATA-GAB-2)
+
+		F.Intrinsic.Control.If(V.uGlobal.UBatchBox.UBound,>,-1)
+
+			F.Intrinsic.Variable.UDTSetMemberValue(V.uGlobal.uBatchBox!LABEL_COPY,V.Local.iLblQty)
+			F.Global.BI.PrintCodesoftLabelFromUDT(V.Global.iBIRunID,V.Global.iBILogID,"uGlobal.uBatchBox","",V.Local.sPrinter,True)
+
+			 F.Global.BI.StopLogging(V.Global.iBILogID)
+
+			 'Printing Codesoft label - loop if duplicate flag
+'			F.Intrinsic.Control.For(V.Local.iCounter,1,V.LOCAL.iLblQty,1)
+'				F.Global.BI.PrintCodesoftLabelFromUDT(V.Global.iBIRunID,V.Global.iBILogID,"uGlobal.uBatchBox","",V.Local.sPrinter,True)
+'			F.Intrinsic.Control.Next(V.Local.iCounter)
+
+
+
+		F.Intrinsic.Control.EndIf
+
+	F.Intrinsic.Control.Else
+		'write record to wl_audit_log
+
+	F.Intrinsic.Control.EndIf
+F.Intrinsic.Control.EndIf
+
+F.Intrinsic.Control.ExitSub
+
+F.Intrinsic.Control.Label("PrintLabel_Err")
+F.Intrinsic.Control.If(V.Ambient.ErrorNumber,<>,0)
+	Function.Intrinsic.String.Concat("Project: ATG_3781_GFM_Boxes.gas",V.Ambient.Newline,V.Ambient.Newline,"Subroutine: ",V.Ambient.CurrentSubroutine,V.Ambient.NewLine,"Error Occurred ",V.Ambient.ErrorNumber," with description ",V.Ambient.ErrorDescription,V.Local.sError)
+	F.Intrinsic.UI.Msgbox(V.Local.sError)
+Function.Intrinsic.Control.EndIf
+
+
+Program.Sub.PrintLabel.End
+
+Program.Sub.Comments.Start
+${$0$}$$}$$}$12:00:00 AM$}$False
+Program.Sub.Comments.End
