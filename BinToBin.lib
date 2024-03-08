@@ -1,0 +1,138 @@
+Program.Sub.Preflight.Start
+
+Variable.UDT.BIN.Define("Part",String)
+Variable.UDT.BIN.Define("Quantity",float)
+Variable.UDT.BIN.Define("Location",String)
+Variable.UDT.BIN.Define("FromBin",String)
+Variable.UDT.BIN.Define("ToBin",String)
+Variable.UDT.BIN.Define("Lot",String)
+Variable.UDT.BIN.Define("Heat",String)
+Variable.UDT.BIN.Define("Serial",String)
+Variable.UDT.BIN.Define("GrossWeight",Float)
+Variable.UDT.BIN.Define("TareWeight",Float)
+Variable.UDT.BIN.Define("ToLocation",String)
+Variable.UDT.BIN.Define("Print",String)
+Variable.UDT.BIN.Define("DATE",String)
+
+Variable.uGlobal.uBIN.Declare("BIN")
+Variable.Global.Lines.Declare(Long,-1)
+
+Program.Sub.Preflight.End
+
+Program.Sub.BINClear.Start
+
+V.uGlobal.uBIN.Redim(0,0)
+V.Global.Lines.Set(-1)
+
+Program.Sub.BINClear.End
+
+Program.Sub.BINGenerate.Start
+V.Local.filedir.Declare(String)
+V.Local.filename.Declare(String)
+V.Local.BINload.Declare(String)
+V.Local.temp.Declare(String)
+V.Local.BIN.Declare(String)
+V.Local.BINBkp.Declare(String)
+V.Local.ix.Declare(Long)
+'file layout
+'060330        UNSTRING IN-REC DELIMITED BY ","
+'060430           INTO TMP-I-PART,
+'060530                TMP-I-LOCN,
+'060630                WS-MOVE-QTY,            X(16)         MOVED INTO A S9(8)V9(4) field
+'                           TMP-I-FROM-BIN,
+'060830                TMP-I-TO-BIN,
+'060930                TMP-I-LOT,
+'061030                TMP-I-HEAT,
+'061130                TMP-I-SERIAL-NUMBER,
+'061230                WS-GROSS-WEIGHT,    X(16)            Moved into a 9(8)v9(8) field
+'061330                WS-TARE-WEIGHT        X(16)            Moved into a 9(8)v9(8) field
+'061430        END-UNSTRING
+'061530
+'loop through UDT
+F.Intrinsic.Control.For(V.Local.ix,V.uGlobal.uBIN.LBound,V.uglobal.uBIN.UBound,1)
+	F.Intrinsic.Control.If(V.uGlobal.uBIN(v.Local.ix)!Part,<>,"")
+		F.Intrinsic.String.Concat(V.Local.BIN,V.uGlobal.uBIN(v.Local.ix)!Part,",",V.uGlobal.uBIN(v.Local.ix)!Location,",",V.uGlobal.uBIN(v.Local.ix)!Quantity,",",V.uGlobal.uBIN(v.Local.ix)!FromBin,",",V.local.BIN)
+		F.Intrinsic.string.Concat(V.Local.BIN,V.uGlobal.uBIN(v.Local.ix)!ToBin,",",V.uGlobal.uBIN(v.Local.ix)!Lot,",",V.uGlobal.uBIN(v.Local.ix)!Heat,",",V.uGlobal.uBIN(v.Local.ix)!Serial,",",V.uGlobal.uBIN(v.Local.ix)!GrossWeight,",",V.uGlobal.uBIN(v.Local.ix)!TareWeight,V.Local.BIN)
+		F.Intrinsic.String.Concat(V.Local.BIN,",",V.uGlobal.uBIN(v.Local.ix)!ToLocation,",",V.uGlobal.uBIN(v.Local.ix)!Print,",",V.caller.User,",",V.uGlobal.uBIN(v.Local.ix)!DATE,V.Local.BIN)
+
+		F.Intrinsic.Control.If(V.Local.ix,<>,V.uGlobal.uBIN.UBound)
+			F.Intrinsic.string.Concat(V.Local.BIN,V.Ambient.newline,V.Local.BIN)
+		F.Intrinsic.Control.endif
+	F.Intrinsic.Control.EndIf
+F.Intrinsic.Control.Next(V.Local.ix)
+
+F.Intrinsic.String.Concat("T",V.Caller.CompanyCode,"tranBin",V.Caller.Terminal,V.Local.filename)
+'output file
+F.Intrinsic.String.Concat(V.Caller.FilesDir,"\",V.Local.filename,V.Local.filedir)
+F.Intrinsic.File.String2File(V.Local.filedir,V.Local.BIN)
+F.Intrinsic.String.Concat(V.Local.filedir,".bkp",V.Local.BINbkp)
+F.Intrinsic.File.String2File(V.Local.binbkp,V.Local.BIN)
+F.Intrinsic.Debug.stop
+
+F.Intrinsic.String.RPad(V.Caller.User," ",8,V.Local.temp)
+F.Intrinsic.String.RPad(V.Local.filename," ",18,V.Local.Filename)
+F.Intrinsic.String.Concat(V.Ambient.DblQuote,V.Local.filename,"Y",V.Ambient.DblQuote,V.Local.BINLOAD)
+F.Intrinsic.Control.DoEvents
+F.Intrinsic.Task.LaunchGSSSync("Lot054up","-c",V.Local.BINLOAD)
+
+Program.Sub.BINGenerate.End
+
+Program.Sub.BINAddRecord.Start
+'arguments, Part, Location, Quantity FromBin,ToBin, Lot, Heat, Serial, GrossWeight, TareWeight
+V.Local.shold.Declare(String)
+
+F.Intrinsic.control.If(V.Global.Lines,=,-1)
+	V.uGlobal.uBIN.Redim(0,0)
+	V.Global.Lines.Set(0)
+F.Intrinsic.Control.ElseIf(V.Global.Lines,<>,-1)
+	F.Intrinsic.Math.Add(V.Global.Lines,1,V.Global.lines)
+	V.uGlobal.uBIN.Redimpreserve(0,V.Global.Lines)
+F.Intrinsic.Control.EndIf
+
+F.Intrinsic.String.RPad(V.Args.part," ",20,V.Local.shold)
+F.Intrinsic.String.Left(V.Local.shold,20,V.Local.shold)
+V.uGlobal.uBIN(v.Global.Lines)!Part.set(V.local.shold)
+
+F.Intrinsic.String.Format(V.Args.quantity,"0.0000",V.Local.shold)
+V.uGlobal.uBIN(v.Global.Lines)!quantity.set(V.local.shold)
+
+F.Intrinsic.String.RPad(V.Args.Location," ",2,V.Local.shold)
+F.Intrinsic.String.Left(V.Local.shold,2,V.Local.shold)
+V.uGlobal.uBIN(v.Global.lines)!Location.set(V.local.shold)
+
+F.Intrinsic.String.RPad(V.Args.Lot," ",15,V.Local.shold)
+F.Intrinsic.String.Left(V.Local.shold,15,V.Local.shold)
+V.uGlobal.uBIN(v.Global.Lines)!Lot.set(V.local.shold)
+
+F.Intrinsic.String.RPad(V.Args.Heat," ",15,V.Local.shold)
+F.Intrinsic.String.Left(V.Local.shold,15,V.Local.shold)
+V.uGlobal.uBIN(v.Global.Lines)!Heat.set(V.local.shold)
+
+F.Intrinsic.String.RPad(V.Args.Serial," ",30,V.Local.shold)
+F.Intrinsic.String.Left(V.Local.shold,30,V.Local.shold)
+V.uGlobal.uBIN(v.Global.Lines)!Serial.set(V.local.shold)
+
+F.Intrinsic.String.RPad(V.Args.FromBin," ",6,V.Local.shold)
+F.Intrinsic.String.Left(V.Local.shold,6,V.Local.shold)
+V.uGlobal.uBIN(v.Global.Lines)!FromBin.set(V.local.shold)
+
+F.Intrinsic.String.RPad(V.Args.ToBin," ",6,V.Local.shold)
+F.Intrinsic.String.Left(V.Local.shold,6,V.Local.shold)
+V.uGlobal.uBIN(v.Global.Lines)!ToBin.set(V.local.shold)
+
+F.Intrinsic.String.Format(V.Args.GrossWeight,"0.0000000",V.Local.shold)
+V.uGlobal.uBIN(v.Global.Lines)!Grossweight.set(V.local.shold)
+
+F.Intrinsic.String.Format(V.Args.TareWeight,"0.0000000",V.Local.shold)
+V.uGlobal.uBIN(v.Global.Lines)!Tareweight.set(V.local.shold)
+
+F.Intrinsic.String.RPad(V.Args.location,"",2,V.Local.shold)
+F.Intrinsic.String.Left(V.Local.shold,2,V.Local.shold)
+V.uGlobal.uBIN(v.Global.lines)!ToLocation.set(V.local.shold)
+V.uGlobal.uBIN(v.Global.lines)!Print.set("N")
+F.Intrinsic.String.Format(V.Ambient.Now,"YYYYMMDD",V.Local.shold)
+V.uGlobal.uBIN(v.Global.lines)!Date.set(V.Local.shold)
+
+Program.Sub.BINAddRecord.End
+
+
